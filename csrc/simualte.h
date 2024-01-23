@@ -37,6 +37,8 @@ void sim_init(){
   top = new VMatrixInvfullTop;
 #elif TESTMODULE == 12
   top = new VDDrReadModule;
+#elif TESTMODULE == 13
+  top = new VDDrsimTop;
 #endif 
 #ifdef WAVE
   contextp->traceEverOn(true);

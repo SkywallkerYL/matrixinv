@@ -38,8 +38,8 @@ doit:
 #Makefile for Verilator
 
 #rsdecodertop Decoder2Col rsdecodertopGauss rsdecoder2colGauss
-#MatrixInvfullTop DDrReadModule
-TOP?=DDrReadModule
+#MatrixInvfullTop DDrReadModule DDrsimTop
+TOP?=DDrsimTop
 TOPNAME?=$(TOP)
 TOPNAMETEST?=$(TOP)
 #FSM_m #keyboard_top #top
@@ -92,7 +92,7 @@ $(SRC_AUTO_BIND): $(NXDC_FILES)
 	python3 $(NVBOARD_HOME)/scripts/auto_pin_bind.py $^ $@
 	
 VSRC = $(shell find $(abspath ./build) -name "*.v")
-#VSRC += $(shell find $(abspath ./vsrc ) -name "*.v")
+VSRC += $(shell find $(abspath ./vsrc ) -name "*.v")
 CSRC = $(shell find $(abspath ./csrc) -name "*.c" -or -name "main.cpp" -or -name "*.cc" )
 CSRC += $(SRC_AUTO_BIND)
 #VSRC += $(shell find $(abspath ./generated) -name "*.v")

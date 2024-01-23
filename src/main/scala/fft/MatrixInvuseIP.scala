@@ -15,7 +15,10 @@ class MatrixInvfullTop extends Module with Config {
   print(" \n")
   print(Mshift)
   print(" \n")
-  val matrixinv = Seq.fill(ParallelNum)(Module (new MatrixInvCore))
+  //Mmax*Mmax/parallel-(M/paralel*i+M/paralel*(i+1)-1)/2*M/paral
+  //val matrixinv = Seq.fill(ParallelNum)(Module (new MatrixInvCore(fifodepth =(Mmax*Mmax/ParallelNum-(Mmax/ParallelNum*_+Mmax/ParallelNum*(_+1)-1)/2*Mmax/ParallelNum) )))
+  val matrixinv = Seq.tabulate(ParallelNum)(i => Module(new MatrixInvCore(index = i)))
+ // val matrixinv = Seq.tabulate(ParallelNum)(i => Module(new MatrixInvCoreWithoutfifo(index = i)))
   val N = io.conFig.data(2*DataWidthIn-1,DataWidthIn)
   val M = io.conFig.data(DataWidthIn-1,0) 
   val choosenumber = RegInit(0.U((log2Ceil(ParallelNum+1)).W))
@@ -75,7 +78,7 @@ class MatrixInvfullTop extends Module with Config {
 输出也默认按行输出。
 
 ****/
-class MatrixInvCore extends Module with Config {
+class MatrixInvCore( val index : Int ) extends Module with Config {
   val io = IO(new Bundle{
     val conFig = Flipped(new AxiStream) 
     val dIn    = Flipped(new AxiStream)
@@ -106,26 +109,41 @@ class MatrixInvCore extends Module with Config {
   val NCount = RegInit(0.U(Nwidth.W))
 
   val MatrixRam = (SyncReadMem(MemDepth,UInt((2*DataWidthIn).W)))
+  //if (MemReadModule) {
+  //  (SyncReadMem(MemDepth,UInt((2*DataWidthIn).W)))
+  //} else{
+  //  (SyncReadMem(MemDepth,UInt((2*DataWidthIn).W)))
+  //}
   //val RamReadEn = Wire(Bool())
   val RamWriteEn = Wire(Bool())
   val RamWriteData = Wire(UInt((2*DataWidthIn).W))
   RamWriteData := io.dIn.data
   RamWriteEn := false.B 
   val RamAddrWrite  = Wire(UInt(MemDepthWidth.W))
-  RamAddrWrite := NCount##MCount
+  if(MemReadModule) {
+    RamAddrWrite :=  NCount##MCount
+  }else {
+    RamAddrWrite := MCount*N + NCount
+  }
+  
   val RamAddrRead   = Wire(UInt(MemDepthWidth.W))
   val RamReadData = Wire(UInt((2*DataWidthIn).W))
   when(RamWriteEn){
     MatrixRam.write(RamAddrWrite,RamWriteData)
   }
- 
-  //计算Cij  i= RowcountRow j = Rowcountcol k = Colcount
   val RowCountRow = RegInit(0.U(Mwidth.W))
   val RowCountCol = RegInit(0.U(Mwidth.W)) 
   //默认读Aik 注意这个地址要提前一个周期给
   //添加了并行度的约束后，当前真正处理的行数是
+  //计算Cij  i= RowcountRow j = Rowcountcol k = Colcount
+  //添加优化，只计算上三角矩阵，也就是说，每次更新新的一行i 的时候，对应的
+  //j 要更新成 i ,而不是0 但是注意  真正的i是realRow
   val realRow = (RowCountRow+Mbase)
-  RamAddrRead := ColmunCount##realRow
+  if(MemReadModule) {
+    RamAddrRead := ColmunCount##realRow
+  }else {
+    RamAddrRead := realRow*N + ColmunCount
+  }
   RamReadData := MatrixRam.read(RamAddrRead)
 
   val Areal = RamReadData(DataWidthIn-1,0) 
@@ -146,7 +164,9 @@ class MatrixInvCore extends Module with Config {
   //val realMdata = ShiftRegister(Mdata,ComplexMulLatency)
   //
   val realMdata = if (use_ip) ComplexMul((Aik),(Ajk)) else ShiftRegister(Mdata,ComplexMulLatency)
-
+  // 这个fifo要存所有乘法的结果，有Nmax个
+  //这个fifo结果好像没有必要，因为复数加法比乘法快。
+  //所以，乘法器的输出可以
   val mulfifo = Module(new fifoinst(((Nmax)),2*DataWidthIn))
   mulfifo.io.fifo.clk := clock 
   mulfifo.io.fifo.rst := reset.asBool
@@ -217,7 +237,12 @@ class MatrixInvCore extends Module with Config {
       Aik.re := Areal.asTypeOf(complex.re)
       Aik.im := Aimag.asTypeOf(complex.im)
       //提前一个周期更改地址，
-      RamAddrRead := ColmunCount##RowCountCol
+      if(MemReadModule) {
+        RamAddrRead := ColmunCount##RowCountCol
+      }else {
+        RamAddrRead := RowCountCol*N + ColmunCount
+      }
+      //RamAddrRead := ColmunCount##RowCountCol
       MatrixInvState := getAjk
     }
     is(getAjk){
@@ -230,7 +255,12 @@ class MatrixInvCore extends Module with Config {
         ColmunCount:= 0.U
       }.otherwise{
         MatrixInvState := getAik
-        RamAddrRead := (ColmunCount+1.U)##realRow
+        if(MemReadModule) {
+          RamAddrRead := (ColmunCount+1.U)##realRow
+        }else {
+          RamAddrRead := realRow*N + (ColmunCount+1.U)
+        }
+        //RamAddrRead := (ColmunCount+1.U)##realRow
         ColmunCount:= ColmunCount + 1.U 
       }
       //提前送下一个地址
@@ -260,7 +290,7 @@ class MatrixInvCore extends Module with Config {
       when(io.conFig.valid){
         addState := waitmulti
         RowCountRow := 0.U 
-        RowCountCol := 0.U 
+        RowCountCol := io.Mbase 
         ColCount := 0.U 
         Cij := 0.U.asTypeOf(complex)
         allfinish := false.B 
@@ -292,7 +322,9 @@ class MatrixInvCore extends Module with Config {
         ColCount := 0.U 
         resultvalid := true.B 
         when(RowCountCol === M-1.U){
-          RowCountCol := 0.U 
+          // 优化，只做上三角部分
+          RowCountCol := realRow + 1.U 
+          //RowCountCol := 0.U 
           when(RowCountRow === (M>>Mshift.U)-1.U){
             //finish := true.B  
             RowCountCol := RowCountCol + 1.U
@@ -315,8 +347,13 @@ class MatrixInvCore extends Module with Config {
       }
     }
   }
-  //
-  val fifodata = Module(new fifoinst(Nmax*Mmax/ParallelNum,2*DataWidthIn))
+  //这个fifo要存矩阵算出来的元素 ，取决于当前的运算核负责的行数，这个通过外部参数传入
+  //计算公式是(M1+M2)*N/2
+  //深度是Mmax*Mmax/parallel-(M/paralel*i+M/paralel*(i+1)-1)/2*M/paral
+  //Nmax*Mmax/ParallelNum fifodepth
+  //第一路其实不需要fifo，算出来直接送出去，存一下只是为了防止外边没有准备好。
+  val fifodepth =if( index == 0) 5 else (Mmax*Mmax/ParallelNum-(Mmax/ParallelNum*index+Mmax/ParallelNum*(index+1)-1)/2*Mmax/ParallelNum)
+  val fifodata = Module(new fifoinst(fifodepth,2*DataWidthIn))
   fifodata.io.fifo.clk := clock 
   fifodata.io.fifo.rst := reset.asBool
   fifodata.io.fifo.din := Cat(Cij.im, Cij.re)
@@ -362,6 +399,304 @@ class MatrixInvCore extends Module with Config {
     }
   }
 }
+
+class MatrixInvCoreWithoutfifo( val index : Int ) extends Module with Config {
+  val io = IO(new Bundle{
+    val conFig = Flipped(new AxiStream) 
+    val dIn    = Flipped(new AxiStream)
+    val dOut   = ((new AxiStream))
+    val Mbase = Input(UInt(Mwidth.W))
+    val choosevalid = Input(Bool())
+   // val finish = Output(Bool())
+  })
+  //default out 
+  
+
+  io.conFig.ready := false.B 
+  io.dIn.ready := false.B 
+  io.dOut.valid := false.B 
+  io.dOut.last := false.B 
+  //
+  val complex = if(use_float) new IEEEComplex else new IntgerComplex
+
+//假定N存在conFig 的高32位 M存在低32位
+  val N = RegInit(0.U(Nwidth.W))
+  val M = RegInit(0.U(Mwidth.W))
+  val Mbase = RegInit(0.U(Mwidth.W))
+  val ColmunCount = RegInit(0.U(Nwidth.W))
+  
+
+  val ColCount = RegInit(0.U(Nwidth.W)) 
+  val MCount = RegInit(0.U(Mwidth.W))
+  val NCount = RegInit(0.U(Nwidth.W))
+
+  val MatrixRam = (SyncReadMem(MemDepth,UInt((2*DataWidthIn).W)))
+  //val RamReadEn = Wire(Bool())
+  val RamWriteEn = Wire(Bool())
+  val RamWriteData = Wire(UInt((2*DataWidthIn).W))
+  RamWriteData := io.dIn.data
+  RamWriteEn := false.B 
+  val RamAddrWrite  = Wire(UInt(MemDepthWidth.W))
+  RamAddrWrite := NCount##MCount
+  val RamAddrRead   = Wire(UInt(MemDepthWidth.W))
+  val RamReadData = Wire(UInt((2*DataWidthIn).W))
+  when(RamWriteEn){
+    MatrixRam.write(RamAddrWrite,RamWriteData)
+  }
+  val RowCountRow = RegInit(0.U(Mwidth.W))
+  val RowCountCol = RegInit(0.U(Mwidth.W)) 
+  //默认读Aik 注意这个地址要提前一个周期给
+  //添加了并行度的约束后，当前真正处理的行数是
+  //计算Cij  i= RowcountRow j = Rowcountcol k = Colcount
+  //添加优化，只计算上三角矩阵，也就是说，每次更新新的一行i 的时候，对应的
+  //j 要更新成 i ,而不是0 但是注意  真正的i是realRow
+  val realRow = (RowCountRow+Mbase)
+  RamAddrRead := ColmunCount##realRow
+  RamReadData := MatrixRam.read(RamAddrRead)
+
+  val Areal = RamReadData(DataWidthIn-1,0) 
+  val Aimag = RamReadData(2*DataWidthIn-1,DataWidthIn)
+  val SubAimag = (~RamReadData(2*DataWidthIn-1)) ##RamReadData(2*DataWidthIn-2,DataWidthIn) 
+  val Aik = RegInit(0.S((2*DataWidthIn).W).asTypeOf(complex))
+  val Ajk = RegInit(0.S((2*DataWidthIn).W).asTypeOf(complex))
+//乘法器结果延迟ComplexMulLatency个周期输出 
+  val Mvalid = RegInit(false.B)
+  val realMvalid = ShiftRegister(Mvalid,ComplexMulLatency)
+
+
+  val FloatInAik = if (use_ip) 0.U.asTypeOf(new MyFloatComplex)  else ComplexRecode(Aik.asTypeOf(new IEEEComplex))
+  val FloatInAjk = if (use_ip) 0.U.asTypeOf(new MyFloatComplex)  else  ComplexRecode(Ajk.asTypeOf(new IEEEComplex))
+  val Mdata = if (use_ip) 0.U.asTypeOf(new IEEEComplex)  else  ComplexDecode(ComplexMul((FloatInAik),(FloatInAjk)).asTypeOf(new MyFloatComplex))
+  //ComplexDecode
+  //RegInit(0.asTypeOf(complex))
+  //val realMdata = ShiftRegister(Mdata,ComplexMulLatency)
+  //
+  val realMdata = if (use_ip) ComplexMul((Aik),(Ajk)) else ShiftRegister(Mdata,ComplexMulLatency)
+  // 这个fifo要存所有乘法的结果，有Nmax个
+  //这个fifo结果好像没有必要，因为复数加法比乘法快。
+  //所以，乘法器的输出可以直接送给加法器
+
+  val Cij = RegInit(0.S((2*DataWidthIn).W).asTypeOf(complex))
+
+  //加法器结果延迟AddLatency个周期输出 
+  val FloatInCij =if (use_ip) 0.U.asTypeOf(new MyFloatComplex) else ComplexRecode(Cij.asTypeOf(new IEEEComplex))
+  val Adddata =if (use_ip) 0.U.asTypeOf(new IEEEComplex) else  ComplexDecode(ComplexAdd((FloatInCij),ComplexRecode(realMdata.asTypeOf(new IEEEComplex))).asTypeOf(new MyFloatComplex))
+  //RegInit(0.asTypeOf(complex))
+  val realAdddata =if (use_ip) ComplexAdd((Cij),(realMdata)) else ShiftRegister(Adddata,ComplexAddLatency)
+  val Addinvalid = Wire(Bool())
+  //RegInit(false.B )
+  Addinvalid := false.B
+  val Addvalid = ShiftRegister(Addinvalid,ComplexAddLatency)
+
+  val resultvalid = Wire(Bool())
+  val finish = Wire(Bool())
+  val allfinish = RegInit(false.B )
+  resultvalid := false.B 
+  finish := false.B 
+
+  val idle :: getMatrix :: getAik :: getAjk :: mulComplex :: waitaddvalid::waitadd ::waitupdate:: Nil = Enum(8)
+  //  0    :: 1         :: 2      :: 3      :: 4          :: 5           ::6       ::7
+  val MatrixInvState = RegInit(idle)
+  switch(MatrixInvState){
+    is(idle){
+      io.conFig.ready := true.B 
+      
+      Mvalid := false.B
+      when(io.conFig.valid){
+        N := io.conFig.data(2*DataWidthIn-1,DataWidthIn)
+        M := io.conFig.data(DataWidthIn-1,0)
+        Mbase := io.Mbase
+        //ColmunCount := 0.U 
+        MCount := 0.U  
+        NCount := 0.U 
+        MatrixInvState := getMatrix
+      }
+    }
+    is(getMatrix){
+      io.dIn.ready := true.B 
+      when(io.dIn.valid){
+        RamWriteEn := true.B 
+        when(NCount === N -1.U){
+          NCount := 0.U 
+          when(MCount === M-1.U){
+            MCount :=0.U 
+            MatrixInvState := getAik 
+          }.otherwise{
+            MCount := MCount + 1.U 
+          }
+        }.otherwise{
+          NCount := NCount + 1.U 
+        }
+      }
+    }
+    
+    is(getAik){
+      
+      Mvalid := false.B 
+
+      Aik.re := Areal.asTypeOf(complex.re)
+      Aik.im := Aimag.asTypeOf(complex.im)
+      //提前一个周期更改地址，
+      RamAddrRead := ColmunCount##RowCountCol
+      MatrixInvState := getAjk
+    }
+    is(getAjk){
+      Ajk.re := Areal.asTypeOf(complex.re)
+      //共轭  虚部去反
+      Ajk.im := SubAimag.asTypeOf(complex.im)
+      MatrixInvState := waitaddvalid
+      Mvalid := true.B 
+    }
+    is(waitaddvalid){
+      Mvalid := false.B
+      //addvalid拉高时，表示该乘法已经完成，并且被加法器受到
+      //表面可以做下一个乘法了
+      when(Addinvalid){
+        when(ColmunCount === N-1.U){
+        //k 的遍历完成
+          MatrixInvState := waitadd 
+          ColmunCount:= 0.U
+        }.otherwise{
+          MatrixInvState := getAik
+          RamAddrRead := (ColmunCount+1.U)##realRow
+          ColmunCount:= ColmunCount + 1.U 
+        }
+      } 
+    }
+    is(waitadd){
+      //等待addvalid拉高
+      //提前送下一个地址
+      when(finish){
+        MatrixInvState := idle 
+      }.elsewhen(resultvalid){
+        ColmunCount := 0.U 
+        //注意这个时候Colmun这些还没更新，空一个状态出来更新
+        MatrixInvState := waitupdate
+      }
+    }
+    is(waitupdate){
+      MatrixInvState := getAik
+    }
+  }
+  //控制加法
+  val idle1 :: waitmulti :: waitmul :: update :: Nil = Enum(4)
+  val addState = RegInit(idle1)
+  switch(addState){
+    is(idle1){
+      when(io.conFig.valid){
+        addState := waitmulti
+        RowCountRow := 0.U 
+        RowCountCol := io.Mbase 
+        ColCount := 0.U 
+        Cij := 0.U.asTypeOf(complex)
+        allfinish := false.B 
+        Addinvalid := false.B 
+      }
+    }
+    is(waitmulti){
+      //乘法结果有效。
+      when(realMvalid){
+        Addinvalid := true.B 
+        addState := waitmul
+
+      }
+    }
+    is(waitmul){
+      //Addinvalid :=false.B 
+      when(Addvalid){
+        Cij := realAdddata
+        addState := update 
+      }
+    }
+    is(update){
+      //ColCount := ColCount + 1.U 
+      //addState := waitmul
+      //k列的加法做完了  要更新到矩阵下一个元素
+      when(ColCount === N-1.U){
+        Cij := 0.U.asTypeOf(complex)
+        ColCount := 0.U 
+        resultvalid := true.B 
+        when(RowCountCol === M-1.U){
+          // 优化，只做上三角部分
+          RowCountCol := realRow + 1.U 
+          //RowCountCol := 0.U 
+          when(RowCountRow === (M>>Mshift.U)-1.U){
+            //finish := true.B  
+            RowCountCol := RowCountCol + 1.U
+            //RowCountRow := 0.U 
+            addState := idle1
+            allfinish := true.B 
+            finish := true.B 
+          }.otherwise{
+             
+            addState := waitmulti
+          }
+          RowCountRow := RowCountRow + 1.U
+        }.otherwise{
+          RowCountCol := RowCountCol + 1.U 
+          addState := waitmulti
+        }
+      }.otherwise{
+        addState := waitmulti
+        ColCount := ColCount + 1.U 
+      }
+    }
+  }
+  //这个fifo要存矩阵算出来的元素 ，取决于当前的运算核负责的行数，这个通过外部参数传入
+  //计算公式是(M1+M2)*N/2
+  //深度是Mmax*Mmax/parallel-(M/paralel*i+M/paralel*(i+1)-1)/2*M/paral
+  //Nmax*Mmax/ParallelNum fifodepth
+  //第一路其实不需要fifo，算出来直接送出去，存一下只是为了防止外边没有准备好。
+  val fifodepth =if( index == 0) 5 else (Mmax*Mmax/ParallelNum-(Mmax/ParallelNum*index+Mmax/ParallelNum*(index+1)-1)/2*Mmax/ParallelNum)
+  val fifodata = Module(new fifoinst(fifodepth,2*DataWidthIn))
+  fifodata.io.fifo.clk := clock 
+  fifodata.io.fifo.rst := reset.asBool
+  fifodata.io.fifo.din := Cat(Cij.im, Cij.re)
+  fifodata.io.fifo.wr_en := resultvalid 
+  fifodata.io.fifo.rd_en := false.B 
+  //控制输出握手
+  val Mulres = RegInit(0.U((2*DataWidthIn).W))//.asTypeOf(complex))
+  val fifooutvalid = RegInit(false.B)
+  when(fifooutvalid){
+    Mulres := fifodata.io.fifo.dout
+  }
+  //io.dOut.data(2*DataWidthIn-1,DataWidthIn) := 0.U //Mulres.im
+  //io.dOut.data(DataWidthIn-1,0)             := 0.U //Mulres.re
+  //寄存fifo数据，防止外部ready未拉高，而fifo的数据只会维持一个周期
+  io.dOut.data := Mux(fifooutvalid,fifodata.io.fifo.dout,Mulres)
+  val idle0 :: readfifo :: readfifoen :: Nil = Enum(3)
+  val shakestate = RegInit(idle0)
+
+  switch(shakestate){
+    is(idle0){
+      when(io.choosevalid){
+        shakestate := readfifoen
+      }
+    }
+    is(readfifo){
+      io.dOut.valid:= true.B 
+      fifooutvalid := false.B 
+      when(io.dOut.ready){
+        when(!allfinish || (!fifodata.io.fifo.empty)){
+          shakestate := readfifoen
+        }.otherwise{
+          shakestate := idle0 
+          io.dOut.last := true.B 
+        }
+      }
+    }
+    is(readfifoen){
+      when(!fifodata.io.fifo.empty){
+        fifodata.io.fifo.rd_en := true.B 
+        fifooutvalid := true.B
+        shakestate := readfifo
+      }
+    }
+  }
+}
+
+
+
 
 
 

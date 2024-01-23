@@ -4,8 +4,8 @@ import chisel3.stage.ChiselStage
 
 object generator extends App with Config {
   //(new ChiselStage).emitVerilog(new FFTtop,Array("--target-dir",s"generated/${FFTlength}Point_${FFTparallel}parallel_${use_float}float_${DataWidth-1}width/"))
-  (new ChiselStage).emitVerilog(new DDrReadModule,Array("--target-dir",s"build/"))
-  // DDrReadModule MatrixInvfullTop
+  (new ChiselStage).emitVerilog(new DDrsimTop,Array("--target-dir",s"build/"))
+  // DDrReadModule MatrixInvfullTop DDrsimTop
   //(new ChiselStage).emitVerilog(new Switch(1, MyFixComplex))
   //val data2 = (VecInit(Seq.fill(radix)(0.S((2 * DataWidth).W).asTypeOf(MyComplex))))
   //def top = new FFTtop

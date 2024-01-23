@@ -172,6 +172,11 @@ class DDrReadModule extends Module with Config {
     }
   }
   //控制输出通道的状态机
+  val fifooutvalid = RegInit(false.B)
+  val fifoout = RegInit(0.U(256.W))
+  when(fifooutvalid){
+    fifoout := fifodata.io.fifo.dout
+  }
   val idle0 :: read1  :: Nil =  Enum(2)
   val ddroutstate = RegInit(idle0)
   switch(ddroutstate){
@@ -179,21 +184,29 @@ class DDrReadModule extends Module with Config {
       when(!fifodata.io.fifo.empty){
         ddroutstate := read1
         fifodata.io.fifo.rd_en := true.B 
-        
+        fifooutvalid := true.B 
       }
     }
     is(read1){
       io.dout.valid := true.B 
+      fifooutvalid := false.B 
       when(io.dout.ready){
-        ddroutstate := idle0
+        //ddroutstate := idle0
         when(NCount ===  N-1.U ){
           NCount := 0.U 
            io.dout.last := true.B 
         }.otherwise{
           NCount := NCount + 1.U 
         }
+        when(!fifodata.io.fifo.empty){
+          //ddroutstate := read1
+          fifodata.io.fifo.rd_en := true.B 
+          fifooutvalid := true.B 
+        }.otherwise{
+          ddroutstate := idle0
+        }
       }
-      io.dout.data  := fifodata.io.fifo.dout
+      io.dout.data  := Mux(fifooutvalid,fifodata.io.fifo.dout,fifoout)
       when(finish && fifodata.io.fifo.empty){
         io.finish := true.B 
       }
@@ -246,6 +259,34 @@ class DDrReadModule extends Module with Config {
   
 }
 
-
+class DDrsimTop extends Module with Config {
+  val io = IO(new Bundle {
+    // read pix 
+    // write bit 
+    //input 
+    val conFig = Flipped(new AxiStream) 
+    val coef   = new AxiStream
+    val ddr    = ((new AxiRead))
+    val dout   = ((new AxiStream256))
+    val finish = Output(Bool()) 
+  })
+  val ddr = Module(new DDrReadModule)
+  val ram = Module(new  ramtop)
+  ddr.io.ddr <> ram.io.axi 
+  io.ddr.rready  := false.B 
+  io.ddr.araddr  := 0.U 
+  io.ddr.arvalid := false.B 
+  io.ddr.arlen   := 0.U 
+  when(io.ddr.rvalid){
+    ddr.io.ddr <> io.ddr
+    ram.io.axi.arvalid := false.B 
+    ram.io.axi.rready := false.B 
+  }
+  ddr.io.conFig <> io.conFig
+  ddr.io.coef <> io.coef
+  io.dout <> ddr.io.dout
+  io.finish := ddr.io.finish
+  //io.econtrol.finish :=  jls.io.econtrol.finish
+}
 
 

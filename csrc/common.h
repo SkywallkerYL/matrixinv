@@ -17,7 +17,7 @@
 #define LLR_INIT_TABLE 5
 
 
-#define TESTMODULE 12
+#define TESTMODULE 13
 #if TESTMODULE == 11
 #include "VMatrixInvfullTop.h"
 #include "VMatrixInvfullTop___024root.h"
@@ -28,6 +28,12 @@ int ITERMAX      = 5 ;
 #include "VDDrReadModule.h"
 #include "VDDrReadModule___024root.h"
 VDDrReadModule* top;
+int maxerrortime = 50;
+int ITERMAX      = 5 ;
+#elif TESTMODULE == 13
+#include "VDDrsimTop.h"
+#include "VDDrsimTop___024root.h"
+VDDrsimTop* top;
 int maxerrortime = 50;
 int ITERMAX      = 5 ;
 #endif

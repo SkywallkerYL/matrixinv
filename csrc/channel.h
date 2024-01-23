@@ -35,4 +35,21 @@ long long binaryStringToLongLong(const std::string& binaryString) {
     // 使用 std::bitset 将二进制字符串转换为 long long
     return std::bitset<64>(binaryString).to_ullong();
 }
+
+long long *ddrData;
+bool difftestflag = 1;
+extern "C" void pmem_write(long long waddr, long long wdata,char wmask){
+    //printf("addr:0x%016x data:0x%016x mask:0b%02b \n",waddr,wdata,wmask);
+    //char c = wdata&0xff;
+    //uint64_t write_data = wdata;
+	ddrData[waddr] = wdata;
+    
+}
+extern "C" void pmem_read(long long raddr, long long *rdata){
+    //printf("addr:0x%016x data:0x%016x\n",raddr,*rdata);
+    *rdata = ddrData[raddr];
+	printf("addr:%d data:%lld\n",raddr,ddrData[raddr]);
+    //printf("addr:0x%016x data:%d read:%d\n",raddr,*rdata,data[raddr]);
+}
+
 #endif 

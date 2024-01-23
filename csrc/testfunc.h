@@ -194,7 +194,7 @@ void toptest(){
     reset(10);
 	//printf("aaaa\n");
 	top->io_conFig_valid = 1;
-	top->io_conFig_data  = ((long long)(6)<<36)| (long long)(16);
+	top->io_conFig_data  = ((long long)(6)<<36)| (long long)(0);
 	clockntimes(1);
 	top->io_conFig_valid = 0;
 	top->io_ddr_arready = 1;
@@ -205,13 +205,13 @@ void toptest(){
 	top->io_ddr_rdata = 0;
 	clockntimes(1);
 	//M 脉冲
-	top->io_ddr_rdata = 5;
+	top->io_ddr_rdata = 64;
 	clockntimes(1);
 	//N 距离门
-	top->io_ddr_rdata = 10;
+	top->io_ddr_rdata = 16;
 	clockntimes(1);
 	//K 通道
-	top->io_ddr_rdata = 10;
+	top->io_ddr_rdata = 16;
 	clockntimes(1);
 	//ChannelShiftAddr
 	top->io_ddr_rdata = 1000;
@@ -233,45 +233,158 @@ void toptest(){
 		count ++;
 	}
 	clockntimes(10);
+	//top->io_conFig_valid = 1;
+	//top->io_conFig_data  = ((long long)(6)<<36)| (long long)(16);
+	//clockntimes(1);
+	//top->io_conFig_valid = 0;
+	//top->io_ddr_arready = 1;
+	//clockntimes(1);
+	////确定系数
+	//top->io_ddr_rvalid = 1;
+	////Lcount
+	//top->io_ddr_rdata = 0;
+	//clockntimes(1);
+	////M 脉冲
+	//top->io_ddr_rdata = 8;
+	//clockntimes(1);
+	////N 距离门
+	//top->io_ddr_rdata = 5;
+	//clockntimes(1);
+	////K 通道
+	//top->io_ddr_rdata = 5;
+	//clockntimes(1);
+	////ChannelShiftAddr
+	//top->io_ddr_rdata = 2000;
+	//clockntimes(1);
+	////PulseShiftAddr
+	//top->io_ddr_rdata = 20;
+	//top->io_ddr_rlast =1;
+	//clockntimes(1);
+	//top->io_ddr_rlast = 0;
+	////printf("cccc\n");
+	//count  = 1 ;
+	//top->io_dout_ready = 1;
+	//while (!top->io_finish) 
+	//{
+	//	top->io_ddr_rdata = 64;//(((long long)(count))<<32)| (long long)((count));
+	//	if(count% 5 == 0) top->io_ddr_rlast = 1;
+	//	else  top->io_ddr_rlast = 0;
+	//	clockntimes(1);
+	//	count ++;
+	//}
+	auto end = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> duration = end - start;
+    std::cout << "Time taken: " << duration.count() << " seconds" << std::endl;
+	printf("wave:%d time:%f w/t:%f\n",wavecount,duration.count(), (double)wavecount/duration.count());
+		//top->io_nextready = 1; 
+		//clockntimes(10);
+		//top->io_nextready = 0;
+	//}
+  
+	//sim_exit();
+}
+#elif TESTMODULE == 13
+void toptest(){
+	//printf("hhhh\n");
+	
+	//for (int i = 0; i < 11 ; i ++) {
+	auto start = std::chrono::high_resolution_clock::now();
+
+    // 执行需要计时的代码
+
+    reset(10);
+	//printf("aaaa\n");
 	top->io_conFig_valid = 1;
-	top->io_conFig_data  = ((long long)(6)<<36)| (long long)(16);
+	top->io_conFig_data  = ((long long)(6)<<36)| (long long)(0);
 	clockntimes(1);
 	top->io_conFig_valid = 0;
 	top->io_ddr_arready = 1;
+	top->io_ddr_rvalid = 1;
 	clockntimes(1);
 	//确定系数
-	top->io_ddr_rvalid = 1;
+	
 	//Lcount
 	top->io_ddr_rdata = 0;
 	clockntimes(1);
 	//M 脉冲
-	top->io_ddr_rdata = 8;
+	top->io_ddr_rdata = 64;
+	//printf("cccc\n");
 	clockntimes(1);
 	//N 距离门
-	top->io_ddr_rdata = 5;
+	top->io_ddr_rdata = 32;
 	clockntimes(1);
 	//K 通道
-	top->io_ddr_rdata = 5;
+	top->io_ddr_rdata = 16;
 	clockntimes(1);
 	//ChannelShiftAddr
-	top->io_ddr_rdata = 2000;
+	top->io_ddr_rdata = 10000;
 	clockntimes(1);
 	//PulseShiftAddr
-	top->io_ddr_rdata = 20;
+	top->io_ddr_rdata = 200;
 	top->io_ddr_rlast =1;
 	clockntimes(1);
+	top->io_ddr_rvalid = 0;
+	top->io_ddr_arready = 0;
 	top->io_ddr_rlast = 0;
-	//printf("cccc\n");
-	count  = 1 ;
+	printf("cccc\n");
+	int count  = 1 ;
 	top->io_dout_ready = 1;
+	//初始化DDr数组
+	long long * ddrin =  new long long[0x80000000];
+	for (size_t i = 0; i < 2000000; i++)
+	{
+		ddrin[i] = i;
+	}
+	
+	ddrData = ddrin;
 	while (!top->io_finish) 
 	{
-		top->io_ddr_rdata = 64;//(((long long)(count))<<32)| (long long)((count));
-		if(count% 5 == 0) top->io_ddr_rlast = 1;
-		else  top->io_ddr_rlast = 0;
+		//top->io_ddr_rdata = 32;//(((long long)(count))<<32)| (long long)((count));
+		//if(count% 10 == 0) top->io_ddr_rlast = 1;
+		//else  top->io_ddr_rlast = 0;
 		clockntimes(1);
 		count ++;
 	}
+	clockntimes(10);
+	//top->io_conFig_valid = 1;
+	//top->io_conFig_data  = ((long long)(6)<<36)| (long long)(16);
+	//clockntimes(1);
+	//top->io_conFig_valid = 0;
+	//top->io_ddr_arready = 1;
+	//clockntimes(1);
+	////确定系数
+	//top->io_ddr_rvalid = 1;
+	////Lcount
+	//top->io_ddr_rdata = 0;
+	//clockntimes(1);
+	////M 脉冲
+	//top->io_ddr_rdata = 8;
+	//clockntimes(1);
+	////N 距离门
+	//top->io_ddr_rdata = 5;
+	//clockntimes(1);
+	////K 通道
+	//top->io_ddr_rdata = 5;
+	//clockntimes(1);
+	////ChannelShiftAddr
+	//top->io_ddr_rdata = 2000;
+	//clockntimes(1);
+	////PulseShiftAddr
+	//top->io_ddr_rdata = 20;
+	//top->io_ddr_rlast =1;
+	//clockntimes(1);
+	//top->io_ddr_rlast = 0;
+	////printf("cccc\n");
+	//count  = 1 ;
+	//top->io_dout_ready = 1;
+	//while (!top->io_finish) 
+	//{
+	//	top->io_ddr_rdata = 64;//(((long long)(count))<<32)| (long long)((count));
+	//	if(count% 5 == 0) top->io_ddr_rlast = 1;
+	//	else  top->io_ddr_rlast = 0;
+	//	clockntimes(1);
+	//	count ++;
+	//}
 	auto end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> duration = end - start;
     std::cout << "Time taken: " << duration.count() << " seconds" << std::endl;

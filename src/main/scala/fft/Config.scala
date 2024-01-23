@@ -30,7 +30,7 @@ trait Config {
   val FixDataWidth = 26
   val BinaryPoint = 10
   // ParallelNum仅支持1 2 4 8 ...
-  val ParallelNum = 1 
+  val ParallelNum = 4
   val Mshift = if(ParallelNum==1) 0 else log2Ceil(ParallelNum)
   //单个浮点运算的延迟
   val MulLatency = 8
@@ -39,13 +39,14 @@ trait Config {
   //复数加法延迟为 AddLatency
   val ComplexMulLatency = MulLatency + AddLatency
   val ComplexAddLatency = AddLatency
-  val Nmax = 12
+  val Nmax = 72
   val Mmax = 32
   
+  val MemReadModule = false 
   val Nwidth = log2Ceil(Nmax)
   val Mwidth = log2Ceil(Mmax)
   val MemDepthWidth = Nwidth+Mwidth
-  val MemDepth =  pow(2, MemDepthWidth).toInt
+  val MemDepth = if(MemReadModule) pow(2, MemDepthWidth).toInt else (Nmax*Mmax).toInt
   val PulseWidth = 16
   val AXIDATAWIDTH = 64 
   val AXISTRBWIDTH = 8

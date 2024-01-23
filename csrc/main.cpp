@@ -56,6 +56,9 @@ int main(int argc , char* argv[]) {
 #elif TESTMODULE == 12 
 	//printf("jjjjj\n");
 	toptest();
+#elif TESTMODULE == 13
+	//printf("jjjjj\n");
+	toptest();
 #endif 
 	sim_exit();
 	return 0;
